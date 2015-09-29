@@ -86,7 +86,6 @@ pub type BigDigit = u32;
 pub type DoubleBigDigit = u64;
 
 pub const ZERO_BIG_DIGIT: BigDigit = 0;
-static ZERO_VEC: [BigDigit; 1] = [ZERO_BIG_DIGIT];
 
 #[allow(non_snake_case)]
 pub mod big_digit {
@@ -294,9 +293,8 @@ impl<'a, 'b> BitOr<&'b BigUint> for &'a BigUint {
     type Output = BigUint;
 
     fn bitor(self, other: &BigUint) -> BigUint {
-        let zeros = ZERO_VEC.iter().cycle();
         let (a, b) = if self.data.len() > other.data.len() { (self, other) } else { (other, self) };
-        let ored = a.data.iter().zip(b.data.iter().chain(zeros)).map(
+        let ored = a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
             |(ai, bi)| *ai | *bi
                 ).collect();
         return BigUint::new(ored);
@@ -309,9 +307,8 @@ impl<'a, 'b> BitXor<&'b BigUint> for &'a BigUint {
     type Output = BigUint;
 
     fn bitxor(self, other: &BigUint) -> BigUint {
-        let zeros = ZERO_VEC.iter().cycle();
         let (a, b) = if self.data.len() > other.data.len() { (self, other) } else { (other, self) };
-        let xored = a.data.iter().zip(b.data.iter().chain(zeros)).map(
+        let xored = a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
             |(ai, bi)| *ai ^ *bi
                 ).collect();
         return BigUint::new(xored);
@@ -375,11 +372,10 @@ impl<'a, 'b> Add<&'b BigUint> for &'a BigUint {
     type Output = BigUint;
 
     fn add(self, other: &BigUint) -> BigUint {
-        let zeros = ZERO_VEC.iter().cycle();
         let (a, b) = if self.data.len() > other.data.len() { (self, other) } else { (other, self) };
 
         let mut carry = 0;
-        let mut sum: Vec<BigDigit> =  a.data.iter().zip(b.data.iter().chain(zeros)).map(|(ai, bi)| {
+        let mut sum: Vec<BigDigit> =  a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(|(ai, bi)| {
             let (hi, lo) = big_digit::from_doublebigdigit(
                 (*ai as DoubleBigDigit) + (*bi as DoubleBigDigit) + (carry as DoubleBigDigit));
             carry = hi;
@@ -397,8 +393,8 @@ impl<'a, 'b> Sub<&'b BigUint> for &'a BigUint {
 
     fn sub(self, other: &BigUint) -> BigUint {
         let new_len = cmp::max(self.data.len(), other.data.len());
-        let zeros = ZERO_VEC.iter().cycle();
-        let (a, b) = (self.data.iter().chain(zeros.clone()), other.data.iter().chain(zeros));
+        let zero = &ZERO_BIG_DIGIT;
+        let (a, b) = (self.data.iter().chain(repeat(zero)), other.data.iter().chain(repeat(zero)));
 
         let mut borrow = 0isize;
         let diff: Vec<BigDigit> =  a.take(new_len).zip(b).map(|(ai, bi)| {
