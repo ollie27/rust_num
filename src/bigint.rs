@@ -155,7 +155,12 @@ pub struct BigUint {
 impl PartialEq for BigUint {
     #[inline]
     fn eq(&self, other: &BigUint) -> bool {
-        match self.cmp(other) { Equal => true, _ => false }
+        self.data == other.data
+    }
+
+    #[inline]
+    fn ne(&self, other: &BigUint) -> bool {
+        self.data != other.data
     }
 }
 impl Eq for BigUint {}
