@@ -69,6 +69,7 @@ use std::str::{self, FromStr};
 use std::{cmp, fmt, hash, mem};
 use std::cmp::Ordering::{self, Less, Greater, Equal};
 use std::{i64, u64};
+use std::ops::Deref;
 
 use rand::Rng;
 use rustc_serialize::hex::ToHex;
@@ -116,13 +117,39 @@ pub mod big_digit {
     }
 }
 
+// Fit in as many BigDigits as possible
+#[cfg(target_pointer_width = "16")]
+const MAX_NOHEAP_LEN: usize = ((16 * 4) / big_digit::BITS) - 1;
+#[cfg(target_pointer_width = "32")]
+const MAX_NOHEAP_LEN: usize = ((32 * 4) / big_digit::BITS) - 1;
+#[cfg(target_pointer_width = "64")]
+const MAX_NOHEAP_LEN: usize = ((64 * 4) / big_digit::BITS) - 1;
+
+// TODO: impl RustcEncodable, RustcDecodable, Debug just like Vec to not break things
+#[derive(Clone, RustcEncodable, RustcDecodable, Debug, PartialEq, Eq)]
+enum BigUintEnum {
+    NoHeap(u8, [BigDigit; MAX_NOHEAP_LEN]),
+    Heap(Vec<BigDigit>),
+}
+
+impl Deref for BigUintEnum {
+    type Target = [BigDigit];
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            BigUintEnum::NoHeap(l, ref a) => &a[..l as usize],
+            BigUintEnum::Heap(ref v) => &v,
+        }
+    }
+}
+
 /// A big unsigned integer type.
 ///
 /// A `BigUint`-typed value `BigUint { data: vec!(a, b, c) }` represents a number
 /// `(a + b * big_digit::BASE + c * big_digit::BASE^2)`.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct BigUint {
-    data: Vec<BigDigit>
+    data: BigUintEnum,
 }
 
 impl PartialEq for BigUint {
@@ -910,8 +937,16 @@ impl BigUint {
     pub fn new(mut digits: Vec<BigDigit>) -> BigUint {
         // omit trailing zeros
         let new_len = digits.iter().rposition(|n| *n != 0).map_or(0, |p| p + 1);
-        digits.truncate(new_len);
-        BigUint { data: digits }
+        if new_len <= MAX_NOHEAP_LEN {
+            let mut array = [0; MAX_NOHEAP_LEN];
+            for (x, y) in digits[..new_len].iter().zip(array.iter_mut()) {
+                *y = *x;
+            }
+            BigUint { data: BigUintEnum::NoHeap(new_len as u8, array) }
+        } else {
+            digits.truncate(new_len);
+            BigUint { data: BigUintEnum::Heap(digits) }
+        }
     }
 
     /// Creates and initializes a `BigUint`.
@@ -1871,7 +1906,7 @@ mod biguint_tests {
     #[test]
     fn test_from_slice() {
         fn check(slice: &[BigDigit], data: &[BigDigit]) {
-            assert!(BigUint::from_slice(slice).data == data);
+            assert!(*BigUint::from_slice(slice).data == *data);
         }
         check(&[1], &[1]);
         check(&[0, 0, 0], &[]);
