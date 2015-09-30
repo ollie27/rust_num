@@ -70,6 +70,7 @@ use std::{cmp, fmt, hash, mem};
 use std::cmp::Ordering::{self, Less, Greater, Equal};
 use std::{i64, u64};
 use std::ops::Deref;
+use std::iter::FromIterator;
 
 use rand::Rng;
 use rustc_serialize::hex::ToHex;
@@ -140,6 +141,13 @@ impl Deref for BigUintEnum {
             BigUintEnum::NoHeap(l, ref a) => &a[..l as usize],
             BigUintEnum::Heap(ref v) => &v,
         }
+    }
+}
+
+impl FromIterator<BigDigit> for BigUint {
+    fn from_iter<T: IntoIterator<Item=BigDigit>>(iterator: T) -> Self {
+        // TODO: Don't allocate for small numbers
+        BigUint::new(iterator.into_iter().collect())
     }
 }
 
@@ -315,7 +323,7 @@ impl<'a, 'b> BitAnd<&'b BigUint> for &'a BigUint {
 
     #[inline]
     fn bitand(self, other: &BigUint) -> BigUint {
-        BigUint::new(self.data.iter().zip(other.data.iter()).map(|(ai, bi)| *ai & *bi).collect())
+        self.data.iter().zip(other.data.iter()).map(|(ai, bi)| *ai & *bi).collect()
     }
 }
 
@@ -326,10 +334,9 @@ impl<'a, 'b> BitOr<&'b BigUint> for &'a BigUint {
 
     fn bitor(self, other: &BigUint) -> BigUint {
         let (a, b) = if self.data.len() > other.data.len() { (self, other) } else { (other, self) };
-        let ored = a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
+        a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
             |(ai, bi)| *ai | *bi
-                ).collect();
-        return BigUint::new(ored);
+        ).collect()
     }
 }
 
@@ -340,10 +347,9 @@ impl<'a, 'b> BitXor<&'b BigUint> for &'a BigUint {
 
     fn bitxor(self, other: &BigUint) -> BigUint {
         let (a, b) = if self.data.len() > other.data.len() { (self, other) } else { (other, self) };
-        let xored = a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
+        a.data.iter().zip(b.data.iter().chain(repeat(&ZERO_BIG_DIGIT))).map(
             |(ai, bi)| *ai ^ *bi
-                ).collect();
-        return BigUint::new(xored);
+        ).collect()
     }
 }
 
