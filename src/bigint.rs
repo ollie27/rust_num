@@ -391,7 +391,7 @@ impl<'a> Shr<usize> for &'a BigUint {
 
 impl Zero for BigUint {
     #[inline]
-    fn zero() -> BigUint { BigUint::new(Vec::new()) }
+    fn zero() -> BigUint { BigUint::from_slice(&[]) }
 
     #[inline]
     fn is_zero(&self) -> bool { self.data.is_empty() }
@@ -399,7 +399,7 @@ impl Zero for BigUint {
 
 impl One for BigUint {
     #[inline]
-    fn one() -> BigUint { BigUint::new(vec!(1)) }
+    fn one() -> BigUint { BigUint::from_slice(&[1]) }
 }
 
 impl Unsigned for BigUint {}
@@ -788,8 +788,8 @@ impl FromPrimitive for BigUint {
     fn from_u64(n: u64) -> Option<BigUint> {
         let n = match big_digit::from_doublebigdigit(n) {
             (0,  0)  => Zero::zero(),
-            (0,  n0) => BigUint::new(vec!(n0)),
-            (n1, n0) => BigUint::new(vec!(n0, n1))
+            (0,  n0) => BigUint::from_slice(&[n0]),
+            (n1, n0) => BigUint::from_slice(&[n0, n1])
         };
         Some(n)
     }
@@ -965,7 +965,17 @@ impl BigUint {
     /// The digits are in little-endian base 2^32.
     #[inline]
     pub fn from_slice(slice: &[BigDigit]) -> BigUint {
-        BigUint::new(slice.to_vec())
+        // omit trailing zeros
+        let new_len = slice.iter().rposition(|n| *n != 0).map_or(0, |p| p + 1);
+        if new_len <= MAX_NOHEAP_LEN {
+            let mut array = [0; MAX_NOHEAP_LEN];
+            for (x, y) in slice[..new_len].iter().zip(array.iter_mut()) {
+                *y = *x;
+            }
+            BigUint { data: BigUintEnum::NoHeap(new_len as u8, array) }
+        } else {
+            BigUint { data: BigUintEnum::Heap(slice[..new_len].to_vec()) }
+        }
     }
 
     /// Creates and initializes a `BigUint`.
@@ -2028,11 +2038,11 @@ mod biguint_tests {
 
     #[test]
     fn test_hash() {
-        let a = BigUint::new(vec!());
-        let b = BigUint::new(vec!(0));
-        let c = BigUint::new(vec!(1));
-        let d = BigUint::new(vec!(1,0,0,0,0,0));
-        let e = BigUint::new(vec!(0,0,0,0,0,1));
+        let a = BigUint::from_slice(&[]);
+        let b = BigUint::from_slice(&[0]);
+        let c = BigUint::from_slice(&[1]);
+        let d = BigUint::from_slice(&[1,0,0,0,0,0]);
+        let e = BigUint::from_slice(&[0,0,0,0,0,1]);
         assert!(::hash(&a) == ::hash(&b));
         assert!(::hash(&b) != ::hash(&c));
         assert!(::hash(&c) == ::hash(&d));
@@ -2335,16 +2345,16 @@ mod biguint_tests {
         check(One::one(), 1);
         check(i64::MAX.to_biguint().unwrap(), i64::MAX);
 
-        check(BigUint::new(vec!(           )), 0);
-        check(BigUint::new(vec!( 1         )), (1 << (0*big_digit::BITS)));
-        check(BigUint::new(vec!(N1         )), (1 << (1*big_digit::BITS)) - 1);
-        check(BigUint::new(vec!( 0,  1     )), (1 << (1*big_digit::BITS)));
-        check(BigUint::new(vec!(N1, N1 >> 1)), i64::MAX);
+        check(BigUint::from_slice(&[           ]), 0);
+        check(BigUint::from_slice(&[ 1         ]), (1 << (0*big_digit::BITS)));
+        check(BigUint::from_slice(&[N1         ]), (1 << (1*big_digit::BITS)) - 1);
+        check(BigUint::from_slice(&[ 0,  1     ]), (1 << (1*big_digit::BITS)));
+        check(BigUint::from_slice(&[N1, N1 >> 1]), i64::MAX);
 
         assert_eq!(i64::MIN.to_biguint(), None);
-        assert_eq!(BigUint::new(vec!(N1, N1    )).to_i64(), None);
-        assert_eq!(BigUint::new(vec!( 0,  0,  1)).to_i64(), None);
-        assert_eq!(BigUint::new(vec!(N1, N1, N1)).to_i64(), None);
+        assert_eq!(BigUint::from_slice(&[N1, N1    ]).to_i64(), None);
+        assert_eq!(BigUint::from_slice(&[ 0,  0,  1]).to_i64(), None);
+        assert_eq!(BigUint::from_slice(&[N1, N1, N1]).to_i64(), None);
     }
 
     // `DoubleBigDigit` size dependent
@@ -2361,14 +2371,14 @@ mod biguint_tests {
         check(u64::MIN.to_biguint().unwrap(), u64::MIN);
         check(u64::MAX.to_biguint().unwrap(), u64::MAX);
 
-        check(BigUint::new(vec!(      )), 0);
-        check(BigUint::new(vec!( 1    )), (1 << (0*big_digit::BITS)));
-        check(BigUint::new(vec!(N1    )), (1 << (1*big_digit::BITS)) - 1);
-        check(BigUint::new(vec!( 0,  1)), (1 << (1*big_digit::BITS)));
-        check(BigUint::new(vec!(N1, N1)), u64::MAX);
+        check(BigUint::from_slice(&[      ]), 0);
+        check(BigUint::from_slice(&[ 1    ]), (1 << (0*big_digit::BITS)));
+        check(BigUint::from_slice(&[N1    ]), (1 << (1*big_digit::BITS)) - 1);
+        check(BigUint::from_slice(&[ 0,  1]), (1 << (1*big_digit::BITS)));
+        check(BigUint::from_slice(&[N1, N1]), u64::MAX);
 
-        assert_eq!(BigUint::new(vec!( 0,  0,  1)).to_u64(), None);
-        assert_eq!(BigUint::new(vec!(N1, N1, N1)).to_u64(), None);
+        assert_eq!(BigUint::from_slice(&[ 0,  0,  1]).to_u64(), None);
+        assert_eq!(BigUint::from_slice(&[N1, N1, N1]).to_u64(), None);
     }
 
     #[test]
@@ -2378,8 +2388,8 @@ mod biguint_tests {
             assert_eq!(n.to_bigint().unwrap().to_biguint().unwrap(), n);
         }
         check(Zero::zero(), Zero::zero());
-        check(BigUint::new(vec!(1,2,3)),
-              BigInt::from_biguint(Plus, BigUint::new(vec!(1,2,3))));
+        check(BigUint::from_slice(&[1,2,3]),
+              BigInt::from_biguint(Plus, BigUint::from_slice(&[1,2,3])));
     }
 
     const SUM_TRIPLES: &'static [(&'static [BigDigit],
@@ -2764,7 +2774,7 @@ mod biguint_tests {
 
     #[test]
     fn test_bits() {
-        assert_eq!(BigUint::new(vec!(0,0,0,0)).bits(), 0);
+        assert_eq!(BigUint::from_slice(&[0,0,0,0]).bits(), 0);
         let n: BigUint = FromPrimitive::from_usize(0).unwrap();
         assert_eq!(n.bits(), 0);
         let n: BigUint = FromPrimitive::from_usize(1).unwrap();
@@ -2996,15 +3006,15 @@ mod bigint_tests {
             None);
 
         assert_eq!(
-            BigInt::from_biguint(Plus,  BigUint::new(vec!(1, 2, 3, 4, 5))).to_i64(),
+            BigInt::from_biguint(Plus,  BigUint::from_slice(&[1, 2, 3, 4, 5])).to_i64(),
             None);
 
         assert_eq!(
-            BigInt::from_biguint(Minus, BigUint::new(vec!(1,0,0,1<<(big_digit::BITS-1)))).to_i64(),
+            BigInt::from_biguint(Minus, BigUint::from_slice(&[1,0,0,1<<(big_digit::BITS-1)])).to_i64(),
             None);
 
         assert_eq!(
-            BigInt::from_biguint(Minus, BigUint::new(vec!(1, 2, 3, 4, 5))).to_i64(),
+            BigInt::from_biguint(Minus, BigUint::from_slice(&[1, 2, 3, 4, 5])).to_i64(),
             None);
     }
 
@@ -3022,12 +3032,12 @@ mod bigint_tests {
         check(u64::MAX.to_bigint().unwrap(), u64::MAX);
 
         assert_eq!(
-            BigInt::from_biguint(Plus, BigUint::new(vec!(1, 2, 3, 4, 5))).to_u64(),
+            BigInt::from_biguint(Plus, BigUint::from_slice(&[1, 2, 3, 4, 5])).to_u64(),
             None);
 
         let max_value: BigUint = FromPrimitive::from_u64(u64::MAX).unwrap();
         assert_eq!(BigInt::from_biguint(Minus, max_value).to_u64(), None);
-        assert_eq!(BigInt::from_biguint(Minus, BigUint::new(vec!(1, 2, 3, 4, 5))).to_u64(), None);
+        assert_eq!(BigInt::from_biguint(Minus, BigUint::from_slice(&[1, 2, 3, 4, 5])).to_u64(), None);
     }
 
     #[test]
@@ -3039,11 +3049,11 @@ mod bigint_tests {
         let zero: BigInt = Zero::zero();
         let unsigned_zero: BigUint = Zero::zero();
         let positive = BigInt::from_biguint(
-            Plus, BigUint::new(vec!(1,2,3)));
+            Plus, BigUint::from_slice(&[1,2,3]));
         let negative = -&positive;
 
         check(zero, unsigned_zero);
-        check(positive, BigUint::new(vec!(1,2,3)));
+        check(positive, BigUint::from_slice(&[1,2,3]));
 
         assert_eq!(negative.to_biguint(), None);
     }
