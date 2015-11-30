@@ -62,9 +62,9 @@ use Integer;
 
 use std::default::Default;
 use std::error::Error;
-use std::iter::repeat;
+use std::iter::{once, repeat};
 use std::num::ParseIntError;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Deref, DerefMut, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 use std::str::{self, FromStr};
 use std::{cmp, fmt, hash, mem};
 use std::cmp::Ordering::{self, Less, Greater, Equal};
@@ -116,19 +116,188 @@ pub mod big_digit {
     }
 }
 
+
+// #[cfg(target_pointer_width = "16")]
+// const POINTER_WIDTH: usize = 16;
+#[cfg(target_pointer_width = "32")]
+const POINTER_WIDTH: usize = 32;
+#[cfg(target_pointer_width = "64")]
+const POINTER_WIDTH: usize = 64;
+
+// Fit in as many BigDigits as possible
+const MAX_NOHEAP_LEN: usize = ((POINTER_WIDTH * 4) / big_digit::BITS) - 1;
+
+// TODO: impl RustcEncodable, RustcDecodable, Debug just like Vec to not break things
+#[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
+enum BigUintEnum {
+    NoHeap(u8, [BigDigit; MAX_NOHEAP_LEN]),
+    Heap(Vec<BigDigit>),
+}
+
+impl BigUintEnum {
+    // #[inline]
+    // fn is_on_heap(&self) -> bool {
+    //     match *self {
+    //         BigUintEnum::NoHeap(..) => false,
+    //         BigUintEnum::Heap(..) => true,
+    //     }
+    // }
+
+    fn trim_zeros(&mut self) {
+        match *self {
+            BigUintEnum::NoHeap(ref mut l, ref a) => {
+                while let Some(&0) = a[..*l as usize].last() {
+                    *l -= 1;
+                }
+            }
+            BigUintEnum::Heap(ref mut v) => {
+                while let Some(&0) = v.last() {
+                    v.pop();
+                }
+            }
+        }
+    }
+
+    fn capacity(&self) -> usize {
+        match *self {
+            BigUintEnum::NoHeap(..) => MAX_NOHEAP_LEN,
+            BigUintEnum::Heap(ref v) => v.capacity(),
+        }
+    }
+
+    fn truncate(&mut self, len: usize) {
+        match *self {
+            BigUintEnum::NoHeap(ref mut l, _) => {
+                if len < *l as usize {
+                    *l = len as u8;
+                }
+            }
+            BigUintEnum::Heap(ref mut v) => {
+                // TODO: should we change to NoHeap if len <= MAX_NOHEAP_LEN?
+                v.truncate(len);
+            }
+        }
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        *self = match *self {
+            BigUintEnum::NoHeap(l, ref a) => {
+                let used_cap = l as usize;
+                let required_cap = used_cap.checked_add(additional)
+                        .expect("capacity overflow");
+                if required_cap <= MAX_NOHEAP_LEN {
+                    return;
+                }
+                let mut v = Vec::with_capacity(required_cap);
+                v.extend(&a[..used_cap]);
+                BigUintEnum::Heap(v)
+            }
+            BigUintEnum::Heap(ref mut v) => {
+                v.reserve(additional);
+                return;
+            }
+        }
+    }
+
+    fn push(&mut self, value: BigDigit) {
+        *self = match *self {
+            BigUintEnum::NoHeap(ref mut l, ref mut a) => {
+                let used_cap = *l as usize;
+                if used_cap < MAX_NOHEAP_LEN {
+                    a[used_cap] = value;
+                    *l += 1;
+                    return;
+                }
+                let mut v = Vec::with_capacity(MAX_NOHEAP_LEN + 1);
+                v.extend(a.iter().cloned().chain(once(value)));
+                BigUintEnum::Heap(v)
+            }
+            BigUintEnum::Heap(ref mut v) => {
+                v.push(value);
+                return;
+            }
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        match *self {
+            BigUintEnum::NoHeap(l, _) => l as usize,
+            BigUintEnum::Heap(ref v) => v.len(),
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        match *self {
+            BigUintEnum::NoHeap(l, _) => l == 0,
+            BigUintEnum::Heap(ref v) => v.is_empty(),
+        }
+    }
+
+    fn extend_desugared<I: Iterator<Item = BigDigit>>(&mut self, mut iterator: I) {
+        // This function should be the moral equivalent of:
+        //
+        //      for item in iterator {
+        //          self.push(item);
+        //      }
+        while let Some(element) = iterator.next() {
+            let len = self.len();
+            if len == self.capacity() {
+                let (lower, _) = iterator.size_hint();
+                self.reserve(lower.saturating_add(1));
+            }
+            self.push(element);
+        }
+    }
+}
+
+impl Extend<BigDigit> for BigUintEnum {
+    #[inline]
+    fn extend<I: IntoIterator<Item = BigDigit>>(&mut self, iterable: I) {
+        self.extend_desugared(iterable.into_iter())
+    }
+}
+
+impl Deref for BigUintEnum {
+    type Target = [BigDigit];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            BigUintEnum::NoHeap(l, ref a) => &a[..l as usize],
+            BigUintEnum::Heap(ref v) => v,
+        }
+    }
+}
+
+impl DerefMut for BigUintEnum {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match *self {
+            BigUintEnum::NoHeap(l, ref mut a) => &mut a[..l as usize],
+            BigUintEnum::Heap(ref mut v) => v,
+        }
+    }
+}
+
 /// A big unsigned integer type.
 ///
 /// A `BigUint`-typed value `BigUint { data: vec!(a, b, c) }` represents a number
 /// `(a + b * big_digit::BASE + c * big_digit::BASE^2)`.
 #[derive(Clone, RustcEncodable, RustcDecodable, Debug)]
 pub struct BigUint {
-    data: Vec<BigDigit>
+    data: BigUintEnum,
 }
 
 impl PartialEq for BigUint {
     #[inline]
     fn eq(&self, other: &BigUint) -> bool {
-        match self.cmp(other) { Equal => true, _ => false }
+        self.data[..] == other.data[..]
+    }
+    #[inline]
+    fn ne(&self, other: &BigUint) -> bool {
+        self.data[..] != other.data[..]
     }
 }
 impl Eq for BigUint {}
@@ -374,7 +543,8 @@ impl<'a> BitAnd<&'a BigUint> for BigUint {
             *ai &= bi;
         }
         data.truncate(other.data.len());
-        BigUint::new(data)
+        data.trim_zeros();
+        BigUint { data: data }
     }
 }
 
@@ -392,7 +562,8 @@ impl<'a> BitOr<&'a BigUint> for BigUint {
             let extra = &other.data[data.len()..];
             data.extend(extra.iter().cloned());
         }
-        BigUint::new(data)
+        data.trim_zeros();
+        BigUint { data: data }
     }
 }
 
@@ -410,7 +581,8 @@ impl<'a> BitXor<&'a BigUint> for BigUint {
             let extra = &other.data[data.len()..];
             data.extend(extra.iter().cloned());
         }
-        BigUint::new(data)
+        data.trim_zeros();
+        BigUint { data: data }
     }
 }
 
@@ -452,7 +624,7 @@ impl<'a> Shr<usize> for &'a BigUint {
 
 impl Zero for BigUint {
     #[inline]
-    fn zero() -> BigUint { BigUint::new(Vec::new()) }
+    fn zero() -> BigUint { BigUint { data: BigUintEnum::NoHeap(0, [0; MAX_NOHEAP_LEN]) } }
 
     #[inline]
     fn is_zero(&self) -> bool { self.data.is_empty() }
@@ -460,7 +632,7 @@ impl Zero for BigUint {
 
 impl One for BigUint {
     #[inline]
-    fn one() -> BigUint { BigUint::new(vec!(1)) }
+    fn one() -> BigUint { BigUint { data: BigUintEnum::NoHeap(1, [1; MAX_NOHEAP_LEN]) } }
 }
 
 impl Unsigned for BigUint {}
@@ -491,7 +663,8 @@ impl<'a> Add<&'a BigUint> for BigUint {
         }
 
         if carry != 0 { sum.push(carry); }
-        BigUint::new(sum)
+        sum.trim_zeros();
+        BigUint { data: sum }
     }
 }
 
@@ -529,7 +702,8 @@ impl<'a> Sub<&'a BigUint> for BigUint {
         }
 
         assert!(borrow == 0, "arithmetic operation overflowed");
-        BigUint::new(diff)
+        diff.trim_zeros();
+        BigUint { data: diff }
     }
 }
 
@@ -576,7 +750,7 @@ impl<'a> Mul<&'a BigUint> for BigUint {
 
             let mut carry = 0;
             let mut prod = a.data;
-            for a in &mut prod {
+            for a in &mut prod[..] {
                 let d = (*a as DoubleBigDigit)
                     * (n as DoubleBigDigit)
                     + (carry as DoubleBigDigit);
@@ -585,7 +759,8 @@ impl<'a> Mul<&'a BigUint> for BigUint {
                 *a = lo;
             }
             if carry != 0 { prod.push(carry); }
-            BigUint::new(prod)
+            prod.trim_zeros();
+            BigUint { data: prod }
         }
 
         #[inline]
@@ -593,7 +768,8 @@ impl<'a> Mul<&'a BigUint> for BigUint {
             let mid = cmp::min(a.data.len(), n);
             let hi = BigUint::from_slice(&a.data[mid ..]);
             a.data.truncate(mid);
-            (hi, BigUint::new(a.data))
+            a.data.trim_zeros();
+            (hi, BigUint { data: a.data })
         }
 
         #[inline]
@@ -868,8 +1044,17 @@ impl FromPrimitive for BigUint {
     fn from_u64(n: u64) -> Option<BigUint> {
         let n = match big_digit::from_doublebigdigit(n) {
             (0,  0)  => Zero::zero(),
-            (0,  n0) => BigUint::new(vec!(n0)),
-            (n1, n0) => BigUint::new(vec!(n0, n1))
+            (0,  n0) => {
+                let mut a = [0; MAX_NOHEAP_LEN];
+                a[0] = n0;
+                BigUint { data: BigUintEnum::NoHeap(1, a) }
+            }
+            (n1, n0) => {
+                let mut a = [0; MAX_NOHEAP_LEN];
+                a[0] = n0;
+                a[1] = n1;
+                BigUint { data: BigUintEnum::NoHeap(2, a) }
+            }
         };
         Some(n)
     }
@@ -987,7 +1172,16 @@ impl BigUint {
         while let Some(&0) = digits.last() {
             digits.pop();
         }
-        BigUint { data: digits }
+        let len = digits.len();
+        if len <= MAX_NOHEAP_LEN {
+            let mut array = [0; MAX_NOHEAP_LEN];
+            for (x, y) in digits[..len].iter().zip(array.iter_mut()) {
+                *y = *x;
+            }
+            BigUint { data: BigUintEnum::NoHeap(len as u8, array) }
+        } else {
+            BigUint { data: BigUintEnum::Heap(digits) }
+        }
     }
 
     /// Creates and initializes a `BigUint`.
@@ -995,7 +1189,20 @@ impl BigUint {
     /// The digits are in little-endian base 2^32.
     #[inline]
     pub fn from_slice(slice: &[BigDigit]) -> BigUint {
-        BigUint::new(slice.to_vec())
+        // omit trailing zeros
+        let mut len = slice.len();
+        while let Some(&0) = slice[..len].last() {
+            len -= 1;
+        }
+        if len <= MAX_NOHEAP_LEN {
+            let mut array = [0; MAX_NOHEAP_LEN];
+            for (x, y) in slice[..len].iter().zip(array.iter_mut()) {
+                *y = *x;
+            }
+            BigUint { data: BigUintEnum::NoHeap(len as u8, array) }
+        } else {
+            BigUint { data: BigUintEnum::Heap(Vec::from(&slice[..len])) }
+        }
     }
 
     /// Creates and initializes a `BigUint`.
@@ -1144,7 +1351,8 @@ impl BigUint {
         if carry != 0 {
             shifted.push(carry);
         }
-        BigUint::new(shifted)
+        shifted.trim_zeros();
+        BigUint { data: shifted }
     }
 
     #[inline]
@@ -1167,7 +1375,8 @@ impl BigUint {
             *elem = (*elem >> n_bits) | borrow;
             borrow = new_borrow;
         }
-        BigUint::new(shifted)
+        shifted.trim_zeros();
+        BigUint { data: shifted }
     }
 
     /// Determines the fewest bits necessary to express the `BigUint`.
@@ -2126,7 +2335,7 @@ mod biguint_tests {
     #[test]
     fn test_from_slice() {
         fn check(slice: &[BigDigit], data: &[BigDigit]) {
-            assert!(BigUint::from_slice(slice).data == data);
+            assert!(&BigUint::from_slice(slice).data[..] == data);
         }
         check(&[1], &[1]);
         check(&[0, 0, 0], &[]);
