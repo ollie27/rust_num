@@ -115,3 +115,83 @@ fn shr(b: &mut Bencher) {
         }
     })
 }
+
+#[bench]
+fn eq(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let y = BigUint::new(vec![12345; 10000]);
+    b.iter(|| {
+        x == y
+    })
+}
+
+#[bench]
+fn ne_diff_len(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let y = BigUint::new(vec![12345; 9999]);
+    b.iter(|| {
+        x != y
+    })
+}
+
+#[bench]
+fn ne_diff_small(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let mut y_digits = vec![12345; 10000];
+    y_digits[0] += 1;
+    let y = BigUint::new(y_digits);
+    b.iter(|| {
+        x != y
+    })
+}
+
+#[bench]
+fn ne_diff_big(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let mut y_digits = vec![12345; 10000];
+    y_digits[9999] += 1;
+    let y = BigUint::new(y_digits);
+    b.iter(|| {
+        x != y
+    })
+}
+
+#[bench]
+fn ord_eq(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let y = BigUint::new(vec![12345; 10000]);
+    b.iter(|| {
+        x.cmp(&y)
+    })
+}
+
+#[bench]
+fn ord_diff_len(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let y = BigUint::new(vec![12345; 9999]);
+    b.iter(|| {
+        x.cmp(&y)
+    })
+}
+
+#[bench]
+fn ord_diff_small(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let mut y_digits = vec![12345; 10000];
+    y_digits[0] += 1;
+    let y = BigUint::new(y_digits);
+    b.iter(|| {
+        x.cmp(&y)
+    })
+}
+
+#[bench]
+fn ord_diff_big(b: &mut Bencher) {
+    let x = BigUint::new(vec![12345; 10000]);
+    let mut y_digits = vec![12345; 10000];
+    y_digits[9999] += 1;
+    let y = BigUint::new(y_digits);
+    b.iter(|| {
+        x.cmp(&y)
+    })
+}

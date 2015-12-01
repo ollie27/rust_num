@@ -184,7 +184,11 @@ pub struct BigUint {
 impl PartialEq for BigUint {
     #[inline]
     fn eq(&self, other: &BigUint) -> bool {
-        match self.cmp(other) { Equal => true, _ => false }
+        self.data[..] == other.data[..]
+    }
+    #[inline]
+    fn ne(&self, other: &BigUint) -> bool {
+        self.data[..] != other.data[..]
     }
 }
 impl Eq for BigUint {}
@@ -210,6 +214,22 @@ fn cmp_slice(a: &[BigDigit], b: &[BigDigit]) -> Ordering {
     }
     return Equal;
 }
+
+// fn cmp_slice(a: &[BigDigit], b: &[BigDigit]) -> Ordering {
+//     match a.len().cmp(&b.len()) {
+//         Equal => (),
+//         non_eq => return non_eq,
+//     }
+//
+//     for i in (0..a.len()).rev() {
+//         match unsafe { a.get_unchecked(i).cmp(&b.get_unchecked(i)) } {
+//             Equal => (),
+//             non_eq => return non_eq,
+//         }
+//     }
+//
+//     Equal
+// }
 
 impl Ord for BigUint {
     #[inline]
