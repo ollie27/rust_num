@@ -68,7 +68,7 @@ use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 use std::str::{self, FromStr};
 use std::fmt;
 use std::cmp::Ordering::{self, Less, Greater, Equal};
-use std::{u8, i64, u64};
+use std::{u8, u32, i64, u64};
 
 use rand::Rng;
 
@@ -1084,8 +1084,7 @@ impl Integer for BigUint {
             let mut prod = &b * &q0;
 
             while cmp_slice(&prod.data[..], &a.data[j..]) == Greater {
-                let one: BigUint = One::one();
-                q0 = q0 - one;
+                q0.decrement();
                 prod = prod - &b;
             }
 
@@ -1576,6 +1575,44 @@ impl BigUint {
             self.data.pop();
         }
         self
+    }
+
+    #[inline]
+    pub fn increment(&mut self) {
+        for d in self.data.iter_mut() {
+            if *d != u32::MAX {
+                *d += 1;
+                return;
+            } else {
+                *d = 0;
+            }
+        }
+
+        self.data.push(1);
+    }
+
+    #[inline]
+    pub fn decrement(&mut self) {
+        if self.is_zero() {
+            panic!("underflow")
+        }
+
+        let last = self.data.len() - 1;
+
+        for d in self.data[..last].iter_mut() {
+            if *d != 0 {
+                *d -= 1;
+                return;
+            } else {
+                *d = u32::MAX;
+            }
+        }
+
+        if self.data[last] != 1 {
+            self.data[last] -= 1;
+        } else {
+            self.data.pop();
+        }
     }
 }
 
@@ -2508,6 +2545,42 @@ impl BigInt {
             return None;
         }
         return Some(self.div(v));
+    }
+
+    #[inline]
+    pub fn increment(&mut self) {
+        match self.sign {
+            Minus => {
+                // TODO: remove zero check in the following:
+                self.data.decrement();
+                if self.data.is_zero() {
+                    self.sign = NoSign;
+                }
+            }
+            NoSign => {
+                self.data.increment();
+                self.sign = Plus;
+            }
+            Plus => self.data.increment(),
+        }
+    }
+
+    #[inline]
+    pub fn decrement(&mut self) {
+        match self.sign {
+            Minus => self.data.increment(),
+            NoSign => {
+                self.data.increment();
+                self.sign = Minus;
+            }
+            Plus => {
+                // TODO: remove zero check in the following:
+                self.data.decrement();
+                if self.data.is_zero() {
+                    self.sign = NoSign;
+                }
+            }
+        }
     }
 }
 
@@ -3575,6 +3648,52 @@ mod biguint_tests {
     fn test_mul_divide_torture_long() {
         test_mul_divide_torture_count(1000000);
     }
+
+    #[test]
+    fn test_increment() {
+        fn check(mut x: BigUint) {
+            let y = &x + BigUint::one();
+            x.increment();
+            assert_eq!(x, y);
+        }
+
+        check(BigUint::zero());
+
+        check(BigUint::one());
+        check(BigUint::from(u32::MAX));
+        check(BigUint::from(1u64 << 32));
+        check(BigUint::from((1u64 << 32) + 1));
+        check(BigUint::from_slice(&[0, 7]));
+        check(BigUint::from_slice(&[u32::MAX, 7, u32::MAX]));
+        check(BigUint::new(vec![u32::MAX; 100]));
+        check(BigUint::one() << 32 * 100);
+        check((BigUint::one() << 32 * 100) + BigUint::one());
+    }
+
+    #[test]
+    fn test_decrement() {
+        fn check(mut x: BigUint) {
+            let y = &x - BigUint::one();
+            x.decrement();
+            assert_eq!(x, y);
+        }
+
+        check(BigUint::one());
+        check(BigUint::from(u32::MAX));
+        check(BigUint::from(1u64 << 32));
+        check(BigUint::from((1u64 << 32) + 1));
+        check(BigUint::from_slice(&[0, 7]));
+        check(BigUint::from_slice(&[u32::MAX, 7, u32::MAX]));
+        check(BigUint::new(vec![u32::MAX; 100]));
+        check(BigUint::one() << 32 * 100);
+        check((BigUint::one() << 32 * 100) + BigUint::one());
+    }
+
+    #[test]
+    #[should_panic(expected = "underflow")]
+    fn test_decrement_zero() {
+        BigUint::zero().decrement();
+    }
 }
 
 #[cfg(test)]
@@ -4311,4 +4430,59 @@ mod bigint_tests {
         // Switching u and l should fail:
         let _n: BigInt = rng.gen_bigint_range(&u, &l);
     }
+
+    #[test]
+    fn test_increment() {
+        fn check(mut x: BigInt) {
+            let mut neg_x = -&x;
+
+            let y = &x + BigInt::one();
+            x.increment();
+            assert_eq!(x, y);
+
+            let neg_y = &neg_x + BigInt::one();
+            neg_x.increment();
+            assert_eq!(neg_x, neg_y);
+        }
+
+        check(BigInt::zero());
+
+        check(BigInt::one());
+        check(BigInt::from(u32::MAX));
+        check(BigInt::from(1u64 << 32));
+        check(BigInt::from((1u64 << 32) + 1));
+        check(BigInt::from_slice(Plus, &[0, 7]));
+        check(BigInt::from_slice(Plus, &[u32::MAX, 7, u32::MAX]));
+        check(BigInt::new(Plus, vec![u32::MAX; 100]));
+        check(BigInt::one() << 32 * 100);
+        check((BigInt::one() << 32 * 100) + BigInt::one());
+    }
+
+    #[test]
+    fn test_decrement() {
+        fn check(mut x: BigInt) {
+            let mut neg_x = -&x;
+
+            let y = &x - BigInt::one();
+            x.decrement();
+            assert_eq!(x, y);
+
+            let neg_y = &neg_x - BigInt::one();
+            neg_x.decrement();
+            assert_eq!(neg_x, neg_y);
+        }
+
+        check(BigInt::zero());
+
+        check(BigInt::one());
+        check(BigInt::from(u32::MAX));
+        check(BigInt::from(1u64 << 32));
+        check(BigInt::from((1u64 << 32) + 1));
+        check(BigInt::from_slice(Plus, &[0, 7]));
+        check(BigInt::from_slice(Plus, &[u32::MAX, 7, u32::MAX]));
+        check(BigInt::new(Plus, vec![u32::MAX; 100]));
+        check(BigInt::one() << 32 * 100);
+        check((BigInt::one() << 32 * 100) + BigInt::one());
+    }
+
 }

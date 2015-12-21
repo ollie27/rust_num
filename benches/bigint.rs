@@ -188,3 +188,94 @@ fn hash(b: &mut Bencher) {
         assert_eq!(h.len(), v.len());
     });
 }
+
+#[bench]
+fn increment(b: &mut Bencher) {
+    let max = BigUint::from(12345u32);
+    b.iter(|| {
+        let mut n = BigUint::zero();
+        while &n < &max {
+            n.increment();
+        }
+        n
+    });
+}
+
+#[bench]
+fn increment_pow_digit(b: &mut Bencher) {
+    let n = BigUint::new(vec![u32::MAX; 1 << 16]);
+    b.iter(|| {
+        let mut n = n.clone();
+        n.increment();
+        n
+    });
+}
+
+#[bench]
+fn increment_naive_0(b: &mut Bencher) {
+    let max = BigUint::from(12345u32);
+    b.iter(|| {
+        let mut n = BigUint::zero();
+        while &n < &max {
+            n = n + BigUint::one();
+        }
+        n
+    });
+}
+
+#[bench]
+fn increment_naive_1(b: &mut Bencher) {
+    let max = BigUint::from(12345u32);
+    b.iter(|| {
+        let mut n = BigUint::zero();
+        let one = BigUint::one();
+        while &n < &max {
+            n = n + &one;
+        }
+        n
+    });
+}
+
+#[bench]
+fn decrement_naive_0(b: &mut Bencher) {
+    b.iter(|| {
+        let mut n = BigUint::from(12345u32);
+        while !n.is_zero() {
+            n = n - BigUint::one();
+        }
+        n
+    });
+}
+
+#[bench]
+fn decrement_naive_1(b: &mut Bencher) {
+    b.iter(|| {
+        let mut n = BigUint::from(12345u32);
+        let one = BigUint::one();
+        while !n.is_zero() {
+            n = n - &one;
+        }
+        n
+    });
+}
+
+#[bench]
+fn decrement(b: &mut Bencher) {
+    b.iter(|| {
+        let mut n = BigUint::from(12345u32);
+        while !n.is_zero() {
+            assert!(!n.is_zero());
+            n.decrement();
+        }
+        n
+    });
+}
+
+#[bench]
+fn decrement_one(b: &mut Bencher) {
+    b.iter(|| {
+        let mut one = BigUint::one();
+        one.decrement();
+        one
+    });
+}
