@@ -188,3 +188,20 @@ fn hash(b: &mut Bencher) {
         assert_eq!(h.len(), v.len());
     });
 }
+
+fn sqrt_bench(b: &mut Bencher, xbits: usize) {
+    let mut rng = get_rng();
+    let x = rng.gen_biguint(xbits);
+
+    b.iter(|| x.sqrt());
+}
+
+#[bench]
+fn sqrt_0(b: &mut Bencher) {
+    sqrt_bench(b, 1 << 8);
+}
+
+#[bench]
+fn sqrt_1(b: &mut Bencher) {
+    sqrt_bench(b, 1 << 16);
+}

@@ -1672,6 +1672,30 @@ impl BigUint {
         }
         self
     }
+
+    pub fn sqrt(&self) -> Self {
+        // let mut x = self.clone();
+        // let mut new_x = (&x + BigUint::one()) >> 1;
+        // while x > new_x {
+        //     x = new_x;
+        //     new_x = (&x + (self / &x)) >> 1;
+        // }
+        // x
+
+        if self.is_zero() {
+            return BigUint::zero();
+        }
+
+        let mut x = BigUint::one() << ((self.bits() + 1) / 2);
+        let mut new_x;
+        loop {
+            new_x = (&x + (self / &x)) >> 1;
+            if x <= new_x {
+                return x;
+            }
+            x = new_x;
+        }
+    }
 }
 
 // `DoubleBigDigit` size dependent
@@ -3823,6 +3847,33 @@ mod biguint_tests {
     #[ignore]
     fn test_mul_divide_torture_long() {
         test_mul_divide_torture_count(1000000);
+    }
+
+    #[test]
+    fn test_sqrt() {
+        fn check(n: &BigUint) {
+            let sqrt_n = n.sqrt();
+            assert!(&(&sqrt_n * &sqrt_n) <= n);
+            let sqrt_n_plus_one = sqrt_n + BigUint::one();
+            assert!(&(&sqrt_n_plus_one * &sqrt_n_plus_one) > n);
+        }
+
+        assert_eq!(BigUint::zero().sqrt(), BigUint::zero());
+        assert_eq!(BigUint::one().sqrt(), BigUint::one());
+        assert_eq!(BigUint::from(2u32).sqrt(), BigUint::one());
+        assert_eq!(BigUint::from(3u32).sqrt(), BigUint::one());
+        assert_eq!(BigUint::from(4u32).sqrt(), BigUint::from(2u32));
+        for i in 0u32..10000 {
+            assert_eq!(BigUint::from(i).sqrt(), i.to_f32().unwrap().sqrt().trunc().to_biguint().unwrap());
+        }
+        let mut x = BigUint::zero();
+        let one = BigUint::one();
+        for _ in 0..10000 {
+            check(&x);
+            x = x + &one;
+        }
+        assert_eq!((BigUint::one() << 100).sqrt(), BigUint::one() << 50);
+        assert_eq!((BigUint::one() << 102).sqrt(), BigUint::one() << 51);
     }
 }
 
