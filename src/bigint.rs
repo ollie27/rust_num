@@ -76,7 +76,6 @@ use std::fmt;
 use std::cmp::Ordering::{self, Less, Greater, Equal};
 use std::{f32, f64};
 use std::{u8, i64, u64};
-use std::ascii::AsciiExt;
 
 // Some of the tests of non-RNG-based functionality are randomized using the
 // RNG-based functionality, so the RNG-based functionality needs to be enabled
@@ -189,7 +188,7 @@ fn div_wide(hi: BigDigit, lo: BigDigit, divisor: BigDigit) -> (BigDigit, BigDigi
 ///
 /// A `BigUint`-typed value `BigUint { data: vec!(a, b, c) }` represents a number
 /// `(a + b * big_digit::BASE + c * big_digit::BASE^2)`.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Hash)]
 #[cfg_attr(feature = "rustc-serialize", derive(RustcEncodable, RustcDecodable))]
 pub struct BigUint {
     data: Vec<BigDigit>
@@ -239,31 +238,37 @@ impl Default for BigUint {
 
 impl fmt::Display for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "", &self.to_str_radix(10))
+        f.pad_integral(true, "", &to_str_radix(false, false, self, 10))
     }
 }
 
 impl fmt::LowerHex for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "0x", &self.to_str_radix(16))
+        f.pad_integral(true, "0x", &to_str_radix(false, false, self, 16))
     }
 }
 
 impl fmt::UpperHex for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "0x", &self.to_str_radix(16).to_ascii_uppercase())
+        f.pad_integral(true, "0x", &to_str_radix(false, true, self, 16))
     }
 }
 
 impl fmt::Binary for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "0b", &self.to_str_radix(2))
+        f.pad_integral(true, "0b", &to_str_radix(false, false, self, 2))
     }
 }
 
 impl fmt::Octal for BigUint {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(true, "0o", &self.to_str_radix(8))
+        f.pad_integral(true, "0o", &to_str_radix(false, false, self, 8))
+    }
+}
+
+impl fmt::Debug for BigUint {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
@@ -1483,11 +1488,12 @@ fn to_radix_digits_le(u: &BigUint, radix: u32) -> Vec<u8> {
     res
 }
 
-fn to_str_radix_reversed(u: &BigUint, radix: u32) -> Vec<u8> {
+// #[inline]
+fn to_str_radix(is_negative: bool, uppercase: bool, u: &BigUint, radix: u32) -> String {
     assert!(2 <= radix && radix <= 36, "The radix must be within 2...36");
 
     if u.is_zero() {
-        return vec![b'0']
+        return String::from("0");
     }
 
     let mut res = if radix.is_power_of_two() {
@@ -1507,15 +1513,33 @@ fn to_str_radix_reversed(u: &BigUint, radix: u32) -> Vec<u8> {
     };
 
     // Now convert everything to ASCII digits.
-    for r in &mut res {
-        debug_assert!((*r as u32) < radix);
-        if *r < 10 {
-            *r += b'0';
-        } else {
-            *r += b'a' - 10;
+    if uppercase {
+        for r in &mut res {
+            debug_assert!((*r as u32) < radix);
+            if *r < 10 {
+                *r += b'0';
+            } else {
+                *r += b'A' - 10;
+            }
+        }
+    } else {
+        for r in &mut res {
+            debug_assert!((*r as u32) < radix);
+            if *r < 10 {
+                *r += b'0';
+            } else {
+                *r += b'a' - 10;
+            }
         }
     }
-    res
+
+    if is_negative {
+        res.push(b'-');
+    }
+
+    res.reverse();
+
+    unsafe { String::from_utf8_unchecked(res) }
 }
 
 impl BigUint {
@@ -1625,9 +1649,7 @@ impl BigUint {
     /// ```
     #[inline]
     pub fn to_str_radix(&self, radix: u32) -> String {
-        let mut v = to_str_radix_reversed(self, radix);
-        v.reverse();
-        unsafe { String::from_utf8_unchecked(v) }
+        to_str_radix(false, false, self, radix)
     }
 
     /// Creates and initializes a `BigUint`.
@@ -1802,7 +1824,7 @@ impl Mul<Sign> for Sign {
 }
 
 /// A big signed integer type.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Hash)]
 #[cfg_attr(feature = "rustc-serialize", derive(RustcEncodable, RustcDecodable))]
 pub struct BigInt {
     sign: Sign,
@@ -1846,31 +1868,37 @@ impl Default for BigInt {
 
 impl fmt::Display for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "", &self.data.to_str_radix(10))
+        f.pad_integral(!self.is_negative(), "", &to_str_radix(false, false, &self.data, 10))
     }
 }
 
 impl fmt::Binary for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "0b", &self.data.to_str_radix(2))
+        f.pad_integral(!self.is_negative(), "0b", &to_str_radix(false, false, &self.data, 2))
     }
 }
 
 impl fmt::Octal for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "0o", &self.data.to_str_radix(8))
+        f.pad_integral(!self.is_negative(), "0o", &to_str_radix(false, false, &self.data, 8))
     }
 }
 
 impl fmt::LowerHex for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "0x", &self.data.to_str_radix(16))
+        f.pad_integral(!self.is_negative(), "0x", &to_str_radix(false, false, &self.data, 16))
     }
 }
 
 impl fmt::UpperHex for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "0x", &self.data.to_str_radix(16).to_ascii_uppercase())
+        f.pad_integral(!self.is_negative(), "0x", &to_str_radix(false, true, &self.data, 16))
+    }
+}
+
+impl fmt::Debug for BigInt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 
@@ -2618,14 +2646,7 @@ impl BigInt {
     /// ```
     #[inline]
     pub fn to_str_radix(&self, radix: u32) -> String {
-        let mut v = to_str_radix_reversed(&self.data, radix);
-
-        if self.is_negative() {
-            v.push(b'-');
-        }
-
-        v.reverse();
-        unsafe { String::from_utf8_unchecked(v) }
+        to_str_radix(self.is_negative(), false, &self.data, radix)
     }
 
     /// Returns the sign of the `BigInt` as a `Sign`.
@@ -3810,6 +3831,48 @@ mod biguint_tests {
     }
 
     #[test]
+    fn test_debug() {
+        let a = BigUint::parse_bytes(b"A", 16).unwrap();
+        let hello = BigUint::parse_bytes("22405534230753963835153736737".as_bytes(), 10).unwrap();
+
+        assert_eq!(format!("{:?}", a), "10");
+        assert_eq!(format!("{:?}", hello), "22405534230753963835153736737");
+        assert_eq!(format!("{:♥>+#8?}", a), "♥♥♥♥♥+10");
+    }
+
+    #[test]
+    fn test_fmt() {
+        let nums: Vec<(u64, BigUint)> = [0, 1, 2, 10, 0o7777, 9999, 0xabcd, u64::MAX].iter()
+                .map(|&n| (n, BigUint::from(n))).collect();
+
+        macro_rules! check {
+            ($($fmt:expr)*) => (
+                for (n, bu) in nums {
+                    $(
+                        assert_eq!(format!(concat!("{:", $fmt, "}"), bu),
+                                   format!(concat!("{:", $fmt, "}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "b}"), bu),
+                                   format!(concat!("{:", $fmt, "b}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "o}"), bu),
+                                   format!(concat!("{:", $fmt, "o}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "x}"), bu),
+                                   format!(concat!("{:", $fmt, "x}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "X}"), bu),
+                                   format!(concat!("{:", $fmt, "X}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "?}"), bu),
+                                   format!(concat!("{:", $fmt, "?}"), n));
+                    )*
+                }
+            );
+        }
+
+        check!("" "#" "04" "4" "+" "♥<16" "♦^16" "♣>16" "♠>+#16");
+        assert_eq!(format!("{:♥>+#16x}", BigUint::from(0xabcd_u32) << 32), "♥+0xabcd00000000");
+        assert_eq!(format!("{:#X}", (BigUint::one() << 128) - BigUint::one()),
+                "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+    }
+
+    #[test]
     fn test_factor() {
         fn factor(n: usize) -> BigUint {
             let mut f: BigUint = One::one();
@@ -4821,6 +4884,51 @@ mod bigint_tests {
         assert_eq!(format!("{}", a), "10");
         assert_eq!(format!("{}", hello), "-22405534230753963835153736737");
         assert_eq!(format!("{:♥>+#8}", a), "♥♥♥♥♥+10");
+    }
+
+    #[test]
+    fn test_debug() {
+        let a = BigInt::parse_bytes(b"A", 16).unwrap();
+        let hello = BigInt::parse_bytes("-22405534230753963835153736737".as_bytes(), 10).unwrap();
+
+        assert_eq!(format!("{:?}", a), "10");
+        assert_eq!(format!("{:?}", hello), "-22405534230753963835153736737");
+        assert_eq!(format!("{:♥>+#8?}", a), "♥♥♥♥♥+10");
+    }
+
+    #[test]
+    fn test_fmt() {
+        let nums: Vec<(u64, BigInt)> = [0, 1, 2, 10, 0o7777, 9999, 0xabcd, u64::MAX].iter()
+                .map(|&n| (n, BigInt::from(n))).collect();
+
+        macro_rules! check {
+            ($($fmt:expr)*) => (
+                for (n, bu) in nums {
+                    $(
+                        assert_eq!(format!(concat!("{:", $fmt, "}"), bu),
+                                   format!(concat!("{:", $fmt, "}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "b}"), bu),
+                                   format!(concat!("{:", $fmt, "b}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "o}"), bu),
+                                   format!(concat!("{:", $fmt, "o}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "x}"), bu),
+                                   format!(concat!("{:", $fmt, "x}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "X}"), bu),
+                                   format!(concat!("{:", $fmt, "X}"), n));
+                        assert_eq!(format!(concat!("{:", $fmt, "?}"), bu),
+                                   format!(concat!("{:", $fmt, "?}"), n));
+                    )*
+                }
+            );
+        }
+
+        check!("" "#" "04" "4" "+" "♥<16" "♦^16" "♣>16" "♠>+#16");
+        assert_eq!(format!("{:♥>+#16x}", BigInt::from(0xabcd_u32) << 32), "♥+0xabcd00000000");
+        assert_eq!(format!("{:#X}", (BigInt::one() << 128) - BigInt::one()),
+                "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
+        assert_eq!(&format!("{:♥>+#16x}", -(BigInt::from(0xabcd_u32) << 32)), "♥-0xabcd00000000");
+        assert_eq!(&format!("{:#X}", -(BigInt::one() << 128) + BigInt::one()),
+                "-0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF");
     }
 
     #[test]

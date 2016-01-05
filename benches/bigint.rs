@@ -201,3 +201,57 @@ fn pow_bench(b: &mut Bencher) {
         }
     });
 }
+
+#[bench]
+fn fmt_binary(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{:b}", x)
+    });
+}
+
+#[bench]
+fn fmt_octal(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{:o}", x)
+    });
+}
+
+#[bench]
+fn fmt_decimal(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{}", x)
+    });
+}
+
+#[bench]
+fn fmt_lower_hex(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{:x}", x)
+    });
+}
+
+#[bench]
+fn fmt_upper_hex(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{:X}", x)
+    });
+}
+
+#[bench]
+fn fmt_debug(b: &mut Bencher) {
+    let mut rng = get_rng();
+    let x = rng.gen_bigint(1009);
+    b.iter(|| {
+        format!("{:?}", x)
+    });
+}
