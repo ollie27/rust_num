@@ -558,8 +558,8 @@ impl Shl<usize> for BigUint {
 
     #[inline]
     fn shl(mut self, rhs: usize) -> BigUint {
-        let n_unit = rhs / big_digit::BITS;
-        let n_bits = rhs % big_digit::BITS;
+        let (n_unit, n_bits) = rhs.div_rem(&big_digit::BITS);
+
         self.shl_unit(n_unit);
         self.shl_bits(n_bits);
         self
@@ -571,7 +571,20 @@ impl<'a> Shl<usize> for &'a BigUint {
 
     #[inline]
     fn shl(self, rhs: usize) -> BigUint {
-        self.clone() << rhs
+        let (n_unit, n_bits) = rhs.div_rem(&big_digit::BITS);
+
+        let new_len = n_unit + self.data.len();
+        let mut v = Vec::with_capacity(new_len);
+        unsafe {
+            debug_assert!(v.capacity() >= new_len);
+            v.set_len(new_len);
+            let ptr = v.as_mut_ptr();
+            ::std::ptr::write_bytes(ptr, 0, n_unit);
+            ::std::ptr::copy_nonoverlapping(self.data.as_ptr(), ptr.offset(n_unit as isize), self.data.len());
+        }
+        let mut ret = BigUint { data: v };
+        ret.shl_bits(n_bits);
+        ret
     }
 }
 
@@ -580,8 +593,8 @@ impl Shr<usize> for BigUint {
 
     #[inline]
     fn shr(mut self, rhs: usize) -> BigUint {
-        let n_unit = rhs / big_digit::BITS;
-        let n_bits = rhs % big_digit::BITS;
+        let (n_unit, n_bits) = rhs.div_rem(&big_digit::BITS);
+
         self.shr_unit(n_unit);
         self.shr_bits(n_bits);
         self
@@ -593,7 +606,15 @@ impl<'a> Shr<usize> for &'a BigUint {
 
     #[inline]
     fn shr(self, rhs: usize) -> BigUint {
-        self.clone() >> rhs
+        let (n_unit, n_bits) = rhs.div_rem(&big_digit::BITS);
+
+        if self.data.len() <= n_unit {
+            return BigUint::zero();
+        }
+
+        let mut ret = BigUint { data: Vec::from(&self.data[n_unit..]) };
+        ret.shr_bits(n_bits);
+        ret
     }
 }
 
@@ -1619,17 +1640,19 @@ impl BigUint {
             return;
         }
 
-        self.data.reserve(n_unit);
-        for _ in 0..n_unit {
-            self.data.insert(0, 0);
-        }
-        // unsafe {
-        //     let ptr = self.data.as_mut_ptr();
-        //     let len = self.data.len();
-        //     ::std::ptr::copy(ptr, ptr.offset(n_unit as isize), len);
-        //     ::std::ptr::write_bytes(ptr, 0, n_unit);
-        //     self.data.set_len(len + n_unit);
+        // self.data.reserve(n_unit);
+        // for _ in 0..n_unit {
+        //     self.data.insert(0, 0);
         // }
+
+        unsafe {
+            self.data.reserve(n_unit);
+            let ptr = self.data.as_mut_ptr();
+            let len = self.data.len();
+            ::std::ptr::copy(ptr, ptr.offset(n_unit as isize), len);
+            ::std::ptr::write_bytes(ptr, 0, n_unit);
+            self.data.set_len(len + n_unit);
+        }
     }
 
     #[inline]
@@ -1656,7 +1679,7 @@ impl BigUint {
         if n_unit == 0 {
             return;
         }
-        if self.data.len() < n_unit {
+        if self.data.len() <= n_unit {
             self.data.clear();
             return;
         }
@@ -1665,18 +1688,12 @@ impl BigUint {
         //     self.data.remove(0);
         // }
 
-        // unsafe {
-        //     let ptr = self.data.as_mut_ptr();
-        //     let new_len = self.data.len() - n_unit;
-        //     ::std::ptr::copy(ptr.offset(n_unit as isize), ptr, new_len);
-        //     self.data.set_len(new_len);
-        // }
-
-        let new_len = self.data.len() - n_unit;
-        for i in 0..new_len {
-            self.data[i] = self.data[i + n_unit];
+        unsafe {
+            let ptr = self.data.as_mut_ptr();
+            let new_len = self.data.len() - n_unit;
+            ::std::ptr::copy(ptr.offset(n_unit as isize), ptr, new_len);
+            self.data.set_len(new_len);
         }
-        self.data.truncate(new_len);
     }
 
     #[inline]
@@ -2908,9 +2925,9 @@ mod biguint_tests {
     #[test]
     fn test_shl() {
         fn check(s: &str, shift: usize, ans: &str) {
-            let opt_biguint = BigUint::from_str_radix(s, 16).ok();
-            let bu = (opt_biguint.unwrap() << shift).to_str_radix(16);
-            assert_eq!(bu, ans);
+            let bu = BigUint::from_str_radix(s, 16).unwrap();
+            assert_eq!((&bu << shift).to_str_radix(16), ans);
+            assert_eq!((bu << shift).to_str_radix(16), ans);
         }
 
         check("0", 3, "0");
@@ -3029,9 +3046,9 @@ mod biguint_tests {
     #[test]
     fn test_shr() {
         fn check(s: &str, shift: usize, ans: &str) {
-            let opt_biguint = BigUint::from_str_radix(s, 16).ok();
-            let bu = (opt_biguint.unwrap() >> shift).to_str_radix(16);
-            assert_eq!(bu, ans);
+            let bu = BigUint::from_str_radix(s, 16).unwrap();
+            assert_eq!((&bu >> shift).to_str_radix(16), ans);
+            assert_eq!((bu >> shift).to_str_radix(16), ans);
         }
 
         check("0", 3, "0");

@@ -176,7 +176,7 @@ fn shr_one(b: &mut Bencher) {
             m = m >> 1;
         }
         m
-    })
+    });
 }
 
 #[bench]
@@ -188,17 +188,71 @@ fn shr_big(b: &mut Bencher) {
             m = m >> 100;
         }
         m
-    })
+    });
 }
 
 #[bench]
 fn shr_huge(b: &mut Bencher) {
     let n = BigUint::one() << 1000;
     b.iter(|| {
+        n.clone() >> 1000
+    });
+}
+
+#[bench]
+fn shr_huge_ref(b: &mut Bencher) {
+    let n = BigUint::one() << 1000;
+    b.iter(|| {
+        &n >> 1000
+    });
+}
+
+#[bench]
+fn shr_many(b: &mut Bencher) {
+    let n = BigUint::one() << 5050;
+    b.iter(|| {
         let mut m = n.clone();
-        m = m >> 1000;
+        for i in 0..101 {
+            m = m >> i;
+        }
         m
-    })
+    });
+}
+
+#[bench]
+fn shr_many_ref(b: &mut Bencher) {
+    let n = BigUint::one() << 5050;
+    b.iter(|| {
+        let mut m = BigUint::zero();
+        for i in 0..101 {
+            m = &n >> i;
+        }
+        m
+    });
+}
+
+#[bench]
+fn shl_many(b: &mut Bencher) {
+    let n = BigUint::one() << 5050;
+    b.iter(|| {
+        let mut m = n.clone();
+        for i in 0..101 {
+            m = m << i;
+        }
+        m
+    });
+}
+
+#[bench]
+fn shl_many_ref(b: &mut Bencher) {
+    let n = BigUint::one() << 5050;
+    b.iter(|| {
+        let mut m = BigUint::zero();
+        for i in 0..101 {
+            m = &n << i;
+        }
+        m
+    });
 }
 
 #[bench]
@@ -210,7 +264,7 @@ fn shl_one(b: &mut Bencher) {
             m = m << 1;
         }
         m
-    })
+    });
 }
 
 #[bench]
@@ -222,7 +276,7 @@ fn shl_big(b: &mut Bencher) {
             m = m << 100;
         }
         m
-    })
+    });
 }
 
 #[bench]
@@ -232,7 +286,7 @@ fn shl_huge(b: &mut Bencher) {
         let mut m = n.clone();
         m = m << 1000;
         m
-    })
+    });
 }
 
 #[bench]
