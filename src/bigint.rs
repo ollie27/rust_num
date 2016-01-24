@@ -1886,7 +1886,53 @@ impl fmt::Octal for BigInt {
 
 impl fmt::LowerHex for BigInt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.pad_integral(!self.is_negative(), "0x", &to_str_radix(false, false, &self.data, 16))
+        // f.pad_integral(!self.is_negative(), "0x", &to_str_radix(false, false, &self.data, 16))
+
+        if let Some((last, rest)) = self.data.data.split_last() {
+            let mask: BigDigit = ((1 << 4) - 1) << (big_digit::BITS - 4);
+            let digits_per_big_digit = big_digit::BITS / 4;
+
+            let leading_zeros = (last.leading_zeros() / 4) as usize;
+            let digits = (digits_per_big_digit - leading_zeros) + (rest.len() * digits_per_big_digit);
+            let mut res = Vec::with_capacity(digits);
+            unsafe {
+                res.set_len(digits);
+                let ptr = res.as_mut_ptr();
+                let mut offset = 0;
+                let mut r = *last;
+                r <<= 4 * leading_zeros;
+                for _ in 0..(digits_per_big_digit - leading_zeros) {
+                    ::std::ptr::write(ptr.offset(offset), ((r & mask) >> (big_digit::BITS - 4)) as u8);
+                    offset += 1;
+                    r <<= 4;
+                }
+
+                for mut r in rest.iter().rev().cloned() {
+                    for _ in 0..digits_per_big_digit {
+                        ::std::ptr::write(ptr.offset(offset), ((r & mask) >> (big_digit::BITS - 4)) as u8);
+                        offset += 1;
+                        r <<= 4;
+                    }
+                }
+            }
+
+            // Now convert everything to ASCII digits.
+            for r in &mut res {
+                if *r < 10 {
+                    *r += b'0';
+                } else {
+                    *r += b'a' - 10;
+                }
+            }
+
+            // res.reverse();
+
+            let s = unsafe { str::from_utf8_unchecked(&res[..]) };
+
+            f.pad_integral(!self.is_negative(), "0x", &s)
+        } else {
+            f.pad_integral(true, "0x", "0")
+        }
     }
 }
 
